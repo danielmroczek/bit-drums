@@ -1,0 +1,365 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta content="width=device-width, initial-scale=1.0" name="viewport" />
+    <title>Bit Drums</title>
+    <link rel="stylesheet" href="styles.css" />
+    <script src="https://unpkg.com/lucide@latest/dist/umd/lucide.js"></script>
+    <script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.x.x/dist/cdn.min.js"></script>
+  </head>
+  <body class="dark">
+    <div class="container" x-data="drumMachine()" x-init="init()">
+      <header class="header">
+        <button class="play-button" @click="togglePlay()">
+          <i x-show="!isPlaying" data-lucide="play" width="24" height="24" x-ref="playIcon"></i>
+          <i x-show="isPlaying" data-lucide="square" width="24" height="24" x-ref="stopIcon"></i>
+        </button>
+        <div class="controls">
+          <input class="bpm-input" type="number" x-model="bpm" min="60" max="200" />
+          <button class="tap-button" @click="tapTempo()">TAP</button>
+        </div>
+      </header>
+      <main class="main">
+        <div class="tracks">
+          <template x-for="track in tracks" :key="track.id">
+            <div class="track">
+              <div class="track-header">
+                <span class="track-name" x-text="track.name" @click="playSample(track)" style="cursor: pointer;"></span>
+                <div class="sequence-control">
+                  <input
+                    class="sequence-slider"
+                    max="65535"
+                    min="0"
+                    type="range"
+                    x-model="track.sequence"
+                    @input="updateStepsFromSequence(track)"
+                  />
+                </div>
+                <input class="sequence-number" type="number" x-model="track.sequence" min="0" max="65535" 
+                       @input="updateStepsFromSequence(track)" />
+                <button class="shuffle-button" @click="shuffleTrack(track)" title="Shuffle pattern">
+                  <i data-lucide="shuffle" width="16" height="16"></i>
+                </button>
+              </div>
+              <div class="step-grid">
+                <template x-for="(step, index) in track.steps" :key="index">
+                  <div 
+                    class="step"
+                    :class="{
+                      'step-active': step.active,
+                      'playing': currentStep === index && isPlaying,
+                      'step-group-light': Math.floor(index / 4) % 2 === 0,
+                      'step-group-dark': Math.floor(index / 4) % 2 === 1
+                    }"
+                    @click="toggleStep(track, index)"
+                  ></div>
+                </template>
+              </div>
+            </div>
+          </template>
+        </div>
+      </main>
+      <!-- <footer class="footer">
+        <div class="footer-nav">
+          <button class="nav-button active">
+            <i data-lucide="music" width="24" height="24" class="nav-icon"></i>
+            <span class="nav-text">Drums</span>
+          </button>
+          <button class="nav-button inactive">
+            <i
+              data-lucide="settings"
+              width="24"
+              height="24"
+              class="nav-icon"
+            ></i>
+            <span class="nav-text">Settings</span>
+          </button>
+        </div>
+      </footer> -->
+    </div>
+    <script>
+      // Initialize Lucide icons once
+      lucide.createIcons();
+
+      // Alpine.js data
+      function drumMachine() {
+        return {
+          isPlaying: false,
+          bpm: 120,
+          currentStep: 0,
+          lastStepTime: 0,
+          audioContext: null,
+          audioBuffers: {},
+          activeHiHat: null, // For choke group
+          tracks: [
+            {
+              id: 1,
+              name: 'Snare',
+              sample: 'samples/SD.wav',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: true }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: true }, { active: false }, { active: false }, { active: false }
+              ]
+            },
+            {
+              id: 2,
+              name: 'Kick',
+              sample: 'samples/KD.wav',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: true }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: true }, { active: false },
+                { active: true }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false }
+              ]
+            },
+            {
+              id: 3,
+              name: 'Closed HH',
+              sample: 'samples/CHH.wav',
+              chokeGroup: 'hihat',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: true }, { active: false },
+                { active: false }, { active: false }, { active: true }, { active: false },
+                { active: false }, { active: false }, { active: true }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false }
+              ]
+            },
+            {
+              id: 4,
+              name: 'Open HH',
+              sample: 'samples/OHH.wav',
+              chokeGroup: 'hihat',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: true }, { active: false }
+              ]
+            },
+            {
+              id: 5,
+              name: 'High Tom',
+              sample: 'samples/HT.wav',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false }
+              ]
+            },
+            {
+              id: 6,
+              name: 'Mid Tom',
+              sample: 'samples/MT.wav',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false }
+              ]
+            },
+            {
+              id: 7,
+              name: 'Low Tom',
+              sample: 'samples/LT.wav',
+              sequence: 0, // Will be calculated from steps
+              steps: [
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false },
+                { active: false }, { active: false }, { active: false }, { active: false }
+              ]
+            }
+          ],
+          
+          // Initialize sequence numbers from step patterns
+          async init() {
+            this.tracks.forEach(track => {
+              this.updateSequenceFromSteps(track);
+            });
+            await this.initAudio();
+            // Initialize icons after Alpine.js has rendered
+            this.$nextTick(() => {
+              lucide.createIcons();
+            });
+          },
+          
+          // Initialize Web Audio API and load samples
+          async initAudio() {
+            try {
+              this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+              
+              // Load all unique samples
+              const uniqueSamples = [...new Set(this.tracks.map(track => track.sample))];
+              
+              for (const samplePath of uniqueSamples) {
+                try {
+                  const response = await fetch(samplePath);
+                  const arrayBuffer = await response.arrayBuffer();
+                  const audioBuffer = await this.audioContext.decodeAudioData(arrayBuffer);
+                  this.audioBuffers[samplePath] = audioBuffer;
+                } catch (error) {
+                  console.warn(`Failed to load sample: ${samplePath}`, error);
+                }
+              }
+            } catch (error) {
+              console.warn('Audio initialization failed:', error);
+            }
+          },
+          
+          // Play a sample with choke group support
+          playSample(track) {
+            if (!this.audioContext || !this.audioBuffers[track.sample]) return;
+            
+            // Handle choke groups (stop other sounds in the same group)
+            if (track.chokeGroup) {
+              if (this.activeHiHat) {
+                this.activeHiHat.stop();
+              }
+            }
+            
+            const source = this.audioContext.createBufferSource();
+            source.buffer = this.audioBuffers[track.sample];
+            source.connect(this.audioContext.destination);
+            source.start();
+            
+            // Store reference for choke group
+            if (track.chokeGroup === 'hihat') {
+              this.activeHiHat = source;
+              source.onended = () => {
+                if (this.activeHiHat === source) {
+                  this.activeHiHat = null;
+                }
+              };
+            }
+          },
+          
+          togglePlay() {
+            this.isPlaying = !this.isPlaying;
+            if (this.isPlaying) {
+              // Resume audio context if suspended (required by browsers)
+              if (this.audioContext && this.audioContext.state === 'suspended') {
+                this.audioContext.resume();
+              }
+              this.startSequencer();
+            } else {
+              this.stopSequencer();
+            }
+            // Only recreate icons when play state changes
+            this.$nextTick(() => {
+              lucide.createIcons();
+            });
+          },
+          
+          startSequencer() {
+            this.lastStepTime = performance.now();
+            const stepDuration = (60 / this.bpm / 4) * 1000; // Time between steps in ms
+            
+            // Play the first step immediately when starting
+            this.tracks.forEach(track => {
+              if (track.steps[this.currentStep].active) {
+                this.playSample(track);
+              }
+            });
+            
+            const tick = (currentTime) => {
+              if (!this.isPlaying) return;
+              
+              if (currentTime - this.lastStepTime >= stepDuration) {
+                this.currentStep = (this.currentStep + 1) % 16;
+                
+                // Play samples for active steps
+                this.tracks.forEach(track => {
+                  if (track.steps[this.currentStep].active) {
+                    this.playSample(track);
+                  }
+                });
+                
+                this.lastStepTime = currentTime;
+              }
+              
+              requestAnimationFrame(tick);
+            };
+            
+            requestAnimationFrame(tick);
+          },
+          
+          stopSequencer() {
+            this.isPlaying = false;
+            this.currentStep = 0; // Reset to beginning when stopped
+            // requestAnimationFrame will stop automatically when isPlaying becomes false
+          },
+          
+          toggleStep(track, stepIndex) {
+            const step = track.steps[stepIndex];
+            step.active = !step.active;
+            // Update sequence number when step is toggled
+            this.updateSequenceFromSteps(track);
+          },
+          
+          // Convert sequence number to step pattern
+          updateStepsFromSequence(track) {
+            const sequence = parseInt(track.sequence) || 0;
+            for (let i = 0; i < 16; i++) {
+              track.steps[i].active = (sequence & (1 << i)) !== 0;
+            }
+          },
+          
+          // Convert step pattern to sequence number
+          updateSequenceFromSteps(track) {
+            let sequence = 0;
+            for (let i = 0; i < 16; i++) {
+              if (track.steps[i].active) {
+                sequence |= (1 << i);
+              }
+            }
+            track.sequence = sequence;
+          },
+          
+          tapTempo() {
+            const now = Date.now();
+            if (!this.lastTap) {
+              this.lastTap = now;
+              return;
+            }
+            
+            const timeDiff = now - this.lastTap;
+            const newBpm = Math.round(60000 / timeDiff);
+            
+            if (newBpm >= 60 && newBpm <= 200) {
+              this.bpm = newBpm;
+              
+              if (this.isPlaying) {
+                this.stopSequencer();
+                this.startSequencer();
+              }
+            }
+            
+            this.lastTap = now;
+          },
+          
+          shuffleTrack(track) {
+            // Generate random 16-bit number (0-65535)
+            const randomSequence = Math.floor(Math.random() * 65536);
+            track.sequence = randomSequence;
+            this.updateStepsFromSequence(track);
+            // Refresh icons after DOM update
+            this.$nextTick(() => {
+              lucide.createIcons();
+            });
+          }
+        }
+      }
+    </script>
+  </body>
+</html>

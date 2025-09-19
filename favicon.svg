@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 32 32">
+    <defs>
+        <linearGradient id="a" x1="15%" x2="85%" y1="15%" y2="85%">
+            <stop stop-color="#019863"/>
+            <stop offset="1" stop-color="#004b31"/>
+        </linearGradient>
+    </defs>
+    <rect width="32" height="32" fill="url(#a)" rx="4"/>
+    <g fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="1.594" class="lucide lucide-binary-icon lucide-binary" style="stroke-width:1.59411;stroke:#fff;stroke-opacity:1" transform="matrix(1.25926 0 0 1.25 .889 1)">
+        <rect width="4" height="6" x="14" y="14" rx="1.588" ry="1.6"/>
+        <rect width="4" height="6" x="6" y="4" rx="1.588" ry="1.6" />
+        <path d="M6 20h4M14 10h4M6 14h2v6M14 4h2v6"/>
+    </g>
+</svg>

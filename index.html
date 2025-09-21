@@ -237,7 +237,7 @@
           },
           
           // Play a sample with choke group support
-          playSample(track) {
+          playSample(track, when = 0) {
             if (!this.audioContext || !this.audioBuffers[track.sample]) return;
             
             // Handle choke groups (stop other sounds in the same group)
@@ -250,7 +250,32 @@
             const source = this.audioContext.createBufferSource();
             source.buffer = this.audioBuffers[track.sample];
             source.connect(this.audioContext.destination);
-            source.start();
+            source.start(when);
+            
+            // Store reference for choke group
+            if (track.chokeGroup === 'hihat') {
+              this.activeHiHat = source;
+              source.onended = () => {
+                if (this.activeHiHat === source) {
+                  this.activeHiHat = null;
+                }
+              };
+            }
+          },
+          
+          // Play a sample at a scheduled time (for precise timing)
+          playScheduledSample(track, when) {
+            if (!this.audioContext || !this.audioBuffers[track.sample]) return;
+            
+            // Handle choke groups for scheduled playback
+            if (track.chokeGroup === 'hihat' && this.activeHiHat) {
+              this.activeHiHat.stop(when);
+            }
+            
+            const source = this.audioContext.createBufferSource();
+            source.buffer = this.audioBuffers[track.sample];
+            source.connect(this.audioContext.destination);
+            source.start(when);
             
             // Store reference for choke group
             if (track.chokeGroup === 'hihat') {
@@ -281,42 +306,61 @@
           },
           
           startSequencer() {
-            this.lastStepTime = performance.now();
-            const stepDuration = (60 / this.bpm / 4) * 1000; // Time between steps in ms
+            this.startTime = this.audioContext.currentTime;
+            this.nextStepTime = this.startTime;
+            this.lastScheduledStep = -1;
             
-            // Play the first step immediately when starting
-            this.tracks.forEach(track => {
-              if (track.steps[this.currentStep].active) {
-                this.playSample(track);
-              }
-            });
+            // Start the scheduling loop
+            this.tick();
+          },
+          
+          tick() {
+            if (!this.isPlaying) return;
             
-            const tick = (currentTime) => {
-              if (!this.isPlaying) return;
+            // Calculate current step from audio time (single source of truth)
+            const stepDuration = 60 / this.bpm / 4;
+            const elapsed = this.audioContext.currentTime - this.startTime;
+            const calculatedStep = Math.floor(elapsed / stepDuration) % 16;
+            
+            // Update visual step
+            if (calculatedStep >= 0 && calculatedStep !== this.currentStep) {
+              this.currentStep = calculatedStep;
+            }
+            
+            // Schedule audio samples ahead
+            this.scheduleAhead();
+            
+            // Continue the loop
+            requestAnimationFrame(() => this.tick());
+          },
+          
+          scheduleAhead(lookAhead = 0.1) {
+            const stepDuration = 60 / this.bpm / 4;
+            
+            while (this.nextStepTime < this.audioContext.currentTime + lookAhead) {
+              // Use the same calculation as visual step for consistency
+              const stepIndex = Math.floor((this.nextStepTime - this.startTime) / stepDuration) % 16;
               
-              if (currentTime - this.lastStepTime >= stepDuration) {
-                this.currentStep = (this.currentStep + 1) % 16;
-                
-                // Play samples for active steps
+              // Only schedule if we haven't already scheduled this step time
+              const stepKey = Math.floor(this.nextStepTime * 1000); // Use time as key
+              if (stepKey !== this.lastScheduledStep) {
                 this.tracks.forEach(track => {
-                  if (track.steps[this.currentStep].active) {
-                    this.playSample(track);
+                  if (track.steps[stepIndex].active) {
+                    this.playScheduledSample(track, this.nextStepTime);
                   }
                 });
-                
-                this.lastStepTime = currentTime;
+                this.lastScheduledStep = stepKey;
               }
               
-              requestAnimationFrame(tick);
-            };
-            
-            requestAnimationFrame(tick);
+              // Move to next step
+              this.nextStepTime += stepDuration;
+            }
           },
           
           stopSequencer() {
             this.isPlaying = false;
-            this.currentStep = 0; // Reset to beginning when stopped
-            // requestAnimationFrame will stop automatically when isPlaying becomes false
+            this.currentStep = 0;
+            this.lastScheduledStep = -1;
           },
           
           toggleStep(track, stepIndex) {
@@ -357,11 +401,6 @@
             
             if (newBpm >= 60 && newBpm <= 200) {
               this.bpm = newBpm;
-              
-              if (this.isPlaying) {
-                this.stopSequencer();
-                this.startSequencer();
-              }
             }
             
             this.lastTap = now;

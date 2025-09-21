@@ -305,19 +305,6 @@ body {
   animation: step-pulse 0.15s ease-in-out;
 }
 
-/* Efficient animation for playing step */
-@keyframes step-pulse {
-  0% {
-    transform: scale(1);
-  }
-  50% {
-    transform: scale(1.1);
-  }
-  100% {
-    transform: scale(1);
-  }
-}
-
 /* Footer */
 .footer {
   border-top: 1px solid rgba(245, 248, 247, 0.5);
@@ -408,5 +395,7 @@ body {
 }
 
 .step.playing {
-  animation: pulse 0.2s ease-in-out;
+  outline: 2px solid var(--primary-color);
+  outline-offset: 2px;
+  animation: pulse 0.15s ease-in-out;
 }
